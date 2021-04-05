@@ -2,6 +2,8 @@
 
 #include "distances.h"
 #include "factored_transition_system.h"
+#include "label_equivalence_relation.h"
+#include "labels.h"
 #include "merge_and_shrink_algorithm.h"
 #include "merge_and_shrink_representation.h"
 #include "transition_system.h"
@@ -17,6 +19,7 @@
 #include "../utils/system.h"
 
 #include <cassert>
+#include <fstream>
 #include <iostream>
 #include <utility>
 
@@ -24,12 +27,118 @@ using namespace std;
 using utils::ExitCode;
 
 namespace merge_and_shrink {
+static void print_vector(const vector<int> &vec, ofstream &out) {
+    for (int value : vec) {
+        out << value << " ";
+    }
+    out << endl;
+}
+
+static void write_automata_file(
+    const TaskProxy &task_proxy, const FactoredTransitionSystem &fts, ofstream &out) {
+    int num_operators = fts.get_labels().get_size();
+    out << "Actions: " << num_operators << endl;
+    int num_automata = fts.get_num_active_entries();
+    out << "Automata: " << num_automata << endl;
+    out << endl;
+    for (auto active_index : fts) {
+        const TransitionSystem &ts = fts.get_transition_system(active_index);
+        int num_states = ts.get_size();
+        out << num_states << endl;
+        out << ts.get_init_state() << endl;
+
+        int num_goal_states = 0;
+        for (int i = 0; i < num_states; ++i) {
+            if (ts.is_goal_state(i)) {
+                ++num_goal_states;
+            }
+        }
+        out << num_goal_states << " ";
+        for (int i = 0; i < num_states; ++i) {
+            if (ts.is_goal_state(i)) {
+                out << " " << i;
+            }
+        }
+        out << endl;
+
+        int label_group_id = 0;
+        int num_global_actions = 0;
+        vector<int> global_to_local_map(num_operators, -1);
+        for (GroupAndTransitions gat : ts) {
+            const LabelGroup &label_group = gat.label_group;
+            for (int label : label_group) {
+                global_to_local_map[label] = label_group_id;
+                ++num_global_actions;
+            }
+
+            ++label_group_id;
+        }
+        if (num_global_actions != num_operators) {
+            ABORT("number of labels differs from number of operators");
+        }
+
+        int num_local_actions = label_group_id;
+
+        // For each local state s (rows) and for each local action o (columns):
+        // id of state to which we transition from s on o (-1 indicates no transition).
+        vector<vector<int>> transition_function(num_states);
+        for (auto &dest_states: transition_function) {
+            dest_states.resize(num_local_actions, -1);
+        }
+
+        label_group_id = 0;
+        vector<int> local_action_costs(num_local_actions, -1);
+        for (GroupAndTransitions gat : ts) {
+            const LabelGroup &label_group = gat.label_group;
+            const vector<Transition> &transitions = gat.transitions;
+
+            local_action_costs[label_group_id] = label_group.get_cost();
+
+            for (const Transition &transition : transitions) {
+                transition_function[transition.src][label_group_id] = transition.target;
+            }
+
+            ++label_group_id;
+        }
+
+        out << num_local_actions << endl;
+
+        // Map global actions to local actions.
+        print_vector(global_to_local_map, out);
+
+        for (auto &transitions : transition_function) {
+            print_vector(transitions, out);
+        }
+
+        // Local action costs flag (1 if local actions have different costs; 0 otherwise).
+        bool non_unit_cost = !task_properties::is_unit_cost(task_proxy);
+        out << non_unit_cost << endl;
+
+        if (non_unit_cost) {
+            // For each local action print its integer cost.
+            print_vector(local_action_costs, out);
+        }
+        out << endl;
+    }
+}
+
 MergeAndShrinkHeuristic::MergeAndShrinkHeuristic(const options::Options &opts)
     : Heuristic(opts),
       verbosity(opts.get<utils::Verbosity>("verbosity")) {
     utils::g_log << "Initializing merge-and-shrink heuristic..." << endl;
     MergeAndShrinkAlgorithm algorithm(opts);
     FactoredTransitionSystem fts = algorithm.build_factored_transition_system(task_proxy);
+
+    // Write automata file.
+    ofstream outfile("automata.txt");
+    if (outfile.rdstate() & ofstream::failbit) {
+        cerr << "Failed to open automata file." << endl;
+        utils::exit_with(utils::ExitCode::SEARCH_CRITICAL_ERROR);
+    }
+    write_automata_file(task_proxy, fts, outfile);
+    outfile.close();
+    exit(0);
+
     extract_factors(fts);
     utils::g_log << "Done initializing merge-and-shrink heuristic." << endl << endl;
 }
