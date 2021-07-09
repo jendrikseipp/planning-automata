@@ -27,8 +27,9 @@
 #   -DCMAKE_BUILD_TYPE=type
 # to the cmake call.
 
-# Version 2.8.3 introduces CMakeParseArguments.
-cmake_minimum_required(VERSION 2.8.3)
+# Compatibility with CMake < 2.8.12 will be removed from a future version of CMake.
+# For Windows we actually require CMake >= 3.12.
+cmake_minimum_required(VERSION 2.8.12)
 
 # If it's available, use ccache to cache compilation results. The two ccache options
 # allow sharing compilation results between different build directories.
@@ -75,4 +76,5 @@ add_custom_command(TARGET translate POST_BUILD
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_CFG_INTDIR}/translate
     COMMENT "Copying translator module into output directory")
 
+add_subdirectory(preprocess_h2)
 add_subdirectory(search)

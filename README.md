@@ -1,59 +1,149 @@
 # Scorpion
 
-Scorpion is an optimal classical planner based on saturated cost
-partitioning. It is based on version 20.06 of the Fast Downward planning
-system (https://github.com/aibasel/downward), which is described below.
+Scorpion is an optimal classical planner that uses saturated cost
+partitioning to combine multiple abstraction heuristics. It also contains
+implementations of many other cost partitioning algorithms over
+abstraction and landmark heuristics. Scorpion is based on the [Fast
+Downward planning system](https://github.com/aibasel/downward), which is
+described below. We regularly port the latest changes from Fast Downward
+to Scorpion and also try to port Scorpion features back to Fast Downward.
 
 Please use the following reference when citing Scorpion:
+Jendrik Seipp, Thomas Keller and Malte Helmert.
+[Saturated Cost Partitioning for Optimal Classical Planning](
+https://www.jair.org/index.php/jair/article/view/11673).
+Journal of Artificial Intelligence Research 67, pp. 129-167. 2020.
 
-Jendrik Seipp, Thomas Keller and Malte Helmert. [Saturated Cost
-Partitioning for Optimal Classical
-Planning](https://www.jair.org/index.php/jair/article/view/11673). Journal
-of Artificial Intelligence Research 67, pp. 129-167. 2020.
 
-The code for saturated cost partitioning (SCP) can be found in the
-`src/search/cost_saturation` directory. Please see
-http://www.fast-downward.org for instructions on how to compile the
-planner.
+## Instructions
 
-The following configuration uses the strongest heuristic
-(h<sup>SCP</sup>-div) from the journal article, i.e., it maximizes over
-multiple diverse SCP heuristics:
+After installing the requirements (see below), compile the planner with
+
+    ./build.py
+
+and see the available options with
+
+    ./fast-downward.py --help  # driver
+    ./fast-downward.py --search -- --help  # search component
+
+For more details (including build instructions for Windows), see the
+documentation about
+[compiling](http://www.fast-downward.org/ObtainingAndRunningFastDownward)
+and [running](http://www.fast-downward.org/PlannerUsage) the planner.
+
+
+### Recommended Configuration
+
+We recommend the following configuration, which is similar to the one
+Scorpion used in the IPC 2018. It prunes irrelevant operators in a
+preprocessing step, uses partial order reduction, and maximizes over
+multiple diverse SCP heuristics computed for projections and Cartesian
+abstractions:
 
 ```
---search "astar(scp([
-    projections(hillclimbing(max_generated_patterns=200, random_seed=0)),
-    projections(systematic(2)),
-    cartesian()],
-    max_orders=infinity, max_time=1000, max_optimization_time=100, diversify=true,
-    orders=greedy_orders(random_seed=0), random_seed=0))"
-```
-
-The version of Scorpion that participated in the IPC 2018 is slightly
-different: it uses different timeouts for hill climbing, diversification
-and optimization, prunes irrelevant operators in a preprocessing step and
-uses partial order reduction during the A* search:
-
-```
---search "astar(scp([
+./fast-downward.py --transform-task preprocess-h2
+  ../benchmarks/gripper/prob01.pddl
+  --search "astar(scp([
     projections(hillclimbing(max_time=100, random_seed=0)),
     projections(systematic(2)),
     cartesian()],
     max_orders=infinity, max_time=200, max_optimization_time=2, diversify=true,
     orders=greedy_orders(random_seed=0), random_seed=0),
-    pruning=stubborn_sets_simple(min_required_pruning_ratio=0.2))"
+    pruning=atom_centric_stubborn_sets(min_required_pruning_ratio=0.2))"
 ```
 
-Note that for operator pruning you need to make the [h^2
-preprocessor](https://people.cs.aau.dk/~alto/software.html#section1)
-available on your `PATH` (e.g., using the name "h2-mutexes") and then pass
-`--transform-task h2-mutexes` to the `fast-downward.py` script (in
-Downward Lab you can use the `driver_options` argument of `add_algorithm`
-for this).
+(In [Downward Lab](https://lab.readthedocs.io/) you can use the
+`driver_options` argument of `add_algorithm` to specify the
+`--transform-task` argument.)
 
-We recommend using the h<sup>SCP</sup>-div configuration when evaluating
-changes to Scorpion itself and the Scorpion IPC 2018 configuration when
-comparing different planners.
+If you want to run exactly the same Scorpion version as in IPC 2018, we
+recommend using the [Scorpion IPC
+repo](https://bitbucket.org/ipc2018-classical/team44/src/ipc-2018-seq-opt/).
+It also includes a [Singularity](https://github.com/hpcng/singularity)
+image.
+
+
+## Differences between Scorpion and Fast Downward
+
+- Scorpion comes with the
+  [h²-preprocessor](https://ojs.aaai.org/index.php/ICAPS/article/view/13708)
+  by Vidal Alcázar and Álvaro Torralba that prunes irrelevant operators.
+  Pass `--transform-task builds/release/bin/preprocess-h2` to use it.
+- The `--transform-task` command allows you to run arbitrary preprocessing
+  commands that transform the SAS+ output from the translator before
+  passing it to the search.
+- If [ccache](https://ccache.dev/) is installed, Scorpion uses it to cache
+  compilation files.
+
+
+### New plugin options
+
+- `cegar(..., search_strategy=incremental)`: use [incremental search for
+  Cartesian abstraction
+  refinement](https://ojs.aaai.org/index.php/ICAPS/article/view/6667)
+  (default).
+
+- `hillclimbing(..., max_generated_patterns=200)`: limit the number of
+  patterns generated by hill climbing.
+
+
+### New cost partitioning algorithms for abstraction heuristics
+
+We use Cartesian abstractions in the example configurations below
+(`[cartesian()]`). You can also use pattern database heuristics, e.g.,
+`[projections(systematic(2))]`, or mix abstractions, e.g.,
+`[projections(systematic(3)), cartesian()]`. Some of the algorithms are
+also part of vanilla Fast Downward, but only for PDB heuristics.
+
+- Optimal cost partitioning:
+  `optimal_cost_partitioning([cartesian()])`
+- Canonical heuristic:
+  `canonical_heuristic([cartesian()])`
+- Post-hoc optimization:
+  `operatorcounting([pho_abstraction_constraints([cartesian()], saturated=false)])`
+- Uniform cost partitioning:
+  `uniform_cost_partitioning([cartesian()], opportunistic=false)`
+- Opportunistic uniform cost partitioning:
+  `uniform_cost_partitioning([cartesian()], ..., opportunistic=true)`
+- Greedy zero-one cost partitioning:
+  `zero_one_cost_partitioning([cartesian()], ...)`
+- Saturated post-hoc optimization:
+  `operatorcounting([pho_abstraction_constraints([cartesian()], saturated=true)])`
+
+You can also compute the maximum over abstraction heuristics:
+
+- `maximize([cartesian()])`
+
+
+### New cost partitioning algorithms for landmark heuristics
+
+Example using A* search and saturated cost partitioning over BJOLP
+landmarks:
+
+    --evaluator
+      "lmc=lmcount(lm_merged([lm_rhw(), lm_hm(m=1)]),
+      admissible=true, cost_partitioning=suboptimal, greedy=true,
+      reuse_costs=true, scoring_function=max_heuristic_per_stolen_costs)"
+    --search
+      "astar(lmc, lazy_evaluator=lmc)"
+
+Different cost partitioning algorithms (all need `admissible=true`):
+
+- Optimal cost partitioning (part of vanilla Fast Downward):
+  `lmcount(..., cost_partitioning=optimal)`
+- Canonical heuristic:
+  `lmcount(..., cost_partitioning=canonical)`
+- Post-hoc optimization:
+  `lmcount(..., cost_partitioning=pho)`
+- Uniform cost partitioning:
+  `lmcount(..., cost_partitioning=suboptimal, greedy=false, reuse_costs=false)`
+- Opportunistic uniform cost partitioning (part of vanilla Fast Downward):
+  `lmcount(..., cost_partitioning=suboptimal, greedy=false, reuse_costs=true, scoring_function=min_stolen_costs)`
+- Greedy zero-one cost partitioning:
+  `lmcount(..., cost_partitioning=suboptimal, greedy=true, reuse_costs=false, scoring_function=max_heuristic)`
+- Saturated cost partitioning:
+  `lmcount(..., cost_partitioning=suboptimal, greedy=true, reuse_costs=true, scoring_function=max_heuristic_per_stolen_costs)`
+
 
 # Fast Downward
 
@@ -80,7 +170,7 @@ This version of Fast Downward has been tested with the following software versio
 | Windows 10   | 3.6    | Visual Studio Enterprise 2017 (MSVC 19.16) and 2019 (MSVC 19.28) | 3.19  |
 
 We test LP support with CPLEX 12.9, SoPlex 3.1.1 and Osi 0.107.9.
-On Ubuntu, we test both CPLEX and SoPlex. On Windows, we currently 
+On Ubuntu, we test both CPLEX and SoPlex. On Windows, we currently
 only test CPLEX, and on macOS, we do not test LP solvers (yet).
 
 
