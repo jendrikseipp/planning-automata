@@ -482,18 +482,18 @@ string TransitionSystem::get_description() const {
 
 void TransitionSystem::dump_dot_graph() const {
     assert(are_transitions_sorted_unique());
-    utils::g_log << "digraph transition_system";
+    cout << "digraph transition_system";
     for (size_t i = 0; i < incorporated_variables.size(); ++i)
-        utils::g_log << "_" << incorporated_variables[i];
-    utils::g_log << " {" << endl;
-    utils::g_log << "    node [shape = none] start;" << endl;
+        cout << "_" << incorporated_variables[i];
+    cout << " {" << endl;
+    cout << "    node [shape = none] start;" << endl;
     for (int i = 0; i < num_states; ++i) {
         bool is_init = (i == init_state);
         bool is_goal = goal_states[i];
-        utils::g_log << "    node [shape = " << (is_goal ? "doublecircle" : "circle")
-                     << "] node" << i << ";" << endl;
+        cout << "    node [shape = " << (is_goal ? "doublecircle" : "circle")
+             << "] node" << i << ";" << endl;
         if (is_init)
-            utils::g_log << "    start -> node" << i << ";" << endl;
+            cout << "    start -> node" << i << ";" << endl;
     }
     for (GroupAndTransitions gat : *this) {
         const LabelGroup &label_group = gat.label_group;
@@ -501,17 +501,17 @@ void TransitionSystem::dump_dot_graph() const {
         for (const Transition &transition : transitions) {
             int src = transition.src;
             int target = transition.target;
-            utils::g_log << "    node" << src << " -> node" << target << " [label = ";
+            cout << "    node" << src << " -> node" << target << " [label = ";
             for (LabelConstIter label_it = label_group.begin();
                  label_it != label_group.end(); ++label_it) {
                 if (label_it != label_group.begin())
-                    utils::g_log << "_";
-                utils::g_log << "x" << *label_it;
+                    cout << "_";
+                cout << "x" << *label_it;
             }
-            utils::g_log << "];" << endl;
+            cout << "];" << endl;
         }
     }
-    utils::g_log << "}" << endl;
+    cout << "}" << endl;
 }
 
 void TransitionSystem::dump_labels_and_transitions() const {
