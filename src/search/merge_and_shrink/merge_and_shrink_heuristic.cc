@@ -41,8 +41,11 @@ static void write_automata_file(
     int num_automata = fts.get_num_active_entries();
     out << "Automata: " << num_automata << endl;
     out << endl;
+    vector<vector<int>> equivalent_labels(num_operators);
+    bool combine_equivalent_labels = false;
     for (auto active_index : fts) {
         const TransitionSystem &ts = fts.get_transition_system(active_index);
+        //ts.dump_dot_graph();
         int num_states = ts.get_size();
         out << num_states << endl;
         out << ts.get_init_state() << endl;
@@ -60,6 +63,27 @@ static void write_automata_file(
             }
         }
         out << endl;
+
+        if (combine_equivalent_labels) {
+            // Find equivalent labels.
+            for (GroupAndTransitions gat : ts) {
+                const LabelGroup &label_group = gat.label_group;
+                vector<int> labels(label_group.begin(), label_group.end());
+                sort(labels.begin(), labels.end());
+                for (int label : label_group) {
+                    if (equivalent_labels[label].empty()) {
+                        equivalent_labels[label] = labels;
+                    } else {
+                        vector<int> intersection;
+                        set_intersection(
+                            equivalent_labels[label].begin(), equivalent_labels[label].end(),
+                            labels.begin(), labels.end(),
+                            back_inserter(intersection));
+                        equivalent_labels[label] = intersection;
+                    }
+                }
+            }
+        }
 
         int label_group_id = 0;
         int num_global_actions = 0;
@@ -119,6 +143,24 @@ static void write_automata_file(
             print_vector(local_action_costs, out);
         }
         out << endl;
+    }
+
+    if (combine_equivalent_labels) {
+        // Count classes of equivalent labels and compute reduction mapping.
+        vector<int> label_mapping(num_operators, -1);
+        int next_label = 0;
+        for (int label1 = 0; label1 < num_operators; ++label1) {
+            if (label_mapping[label1] != -1) {
+                continue;
+            }
+            for (int label2 : equivalent_labels[label1]) {
+                assert(label_mapping[label2] == -1);
+                label_mapping[label2] = next_label;
+            }
+            ++next_label;
+        }
+        //cout << "Label mapping: " << label_mapping << endl;
+        cout << "Combining equivalent labels: " << num_operators << " -> " << next_label << endl;
     }
 }
 
