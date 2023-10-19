@@ -3,9 +3,7 @@
 #include "abstraction.h"
 #include "utils.h"
 
-#include "../option_parser.h"
-#include "../plugin.h"
-
+#include "../plugins/plugin.h"
 #include "../utils/collections.h"
 #include "../utils/logging.h"
 #include "../utils/rng.h"
@@ -15,7 +13,7 @@
 using namespace std;
 
 namespace cost_saturation {
-OrderGeneratorDynamicGreedy::OrderGeneratorDynamicGreedy(const Options &opts)
+OrderGeneratorDynamicGreedy::OrderGeneratorDynamicGreedy(const plugins::Options &opts)
     : OrderGenerator(opts),
       scoring_function(opts.get<ScoringFunction>("scoring_function")),
       abstractions(nullptr),
@@ -23,11 +21,10 @@ OrderGeneratorDynamicGreedy::OrderGeneratorDynamicGreedy(const Options &opts)
 }
 
 Order OrderGeneratorDynamicGreedy::compute_dynamic_greedy_order_for_sample(
-    const Abstractions &abstractions,
     const vector<int> &abstract_state_ids,
     vector<int> remaining_costs) const {
-    assert(abstractions.size() == abstract_state_ids.size());
-    vector<int> remaining_abstractions = get_default_order(abstractions.size());
+    assert(abstractions->size() == abstract_state_ids.size());
+    vector<int> remaining_abstractions = get_default_order(abstractions->size());
 
     Order order;
     while (!remaining_abstractions.empty()) {
@@ -43,7 +40,7 @@ Order OrderGeneratorDynamicGreedy::compute_dynamic_greedy_order_for_sample(
         for (int abs_id : remaining_abstractions) {
             assert(utils::in_bounds(abs_id, abstract_state_ids));
             int abstract_state_id = abstract_state_ids[abs_id];
-            Abstraction &abstraction = *abstractions[abs_id];
+            const Abstraction &abstraction = *abstractions->at(abs_id);
             vector<int> h_values = abstraction.compute_goal_distances(
                 remaining_costs);
             vector<int> saturated_costs = abstraction.compute_saturated_costs(
@@ -78,11 +75,11 @@ Order OrderGeneratorDynamicGreedy::compute_dynamic_greedy_order_for_sample(
 }
 
 void OrderGeneratorDynamicGreedy::initialize(
-    const Abstractions &abstractions,
-    const vector<int> &costs) {
-    utils::Log() << "Initialize dynamic greedy order generator" << endl;
-    this->abstractions = &abstractions;
-    this->costs = &costs;
+    const Abstractions &abstractions_,
+    const vector<int> &costs_) {
+    utils::g_log << "Initialize dynamic greedy order generator" << endl;
+    abstractions = &abstractions_;
+    costs = &costs_;
 }
 
 Order OrderGeneratorDynamicGreedy::compute_order_for_state(
@@ -91,10 +88,10 @@ Order OrderGeneratorDynamicGreedy::compute_order_for_state(
     assert(abstractions && costs);
     utils::Timer greedy_timer;
     vector<int> order = compute_dynamic_greedy_order_for_sample(
-        *abstractions, abstract_state_ids, *costs);
+        abstract_state_ids, *costs);
 
     if (verbose) {
-        utils::Log() << "Time for computing dynamic greedy order: "
+        utils::g_log << "Time for computing dynamic greedy order: "
                      << greedy_timer << endl;
     }
 
@@ -102,17 +99,18 @@ Order OrderGeneratorDynamicGreedy::compute_order_for_state(
     return order;
 }
 
+class OrderGeneratorDynamicGreedyFeature
+    : public plugins::TypedFeature<OrderGenerator, OrderGeneratorDynamicGreedy> {
+public:
+    OrderGeneratorDynamicGreedyFeature() : TypedFeature("dynamic_greedy_orders") {
+        document_title("Dynamic greedy orders");
+        document_synopsis(
+            "Order abstractions greedily by a given scoring function, "
+            "dynamically recomputing the next best abstraction after each ordering step.");
+        add_scoring_function_to_feature(*this);
+        add_common_order_generator_options(*this);
+    }
+};
 
-static shared_ptr<OrderGenerator> _parse_greedy(OptionParser &parser) {
-    add_scoring_function_to_parser(parser);
-    add_common_order_generator_options(parser);
-    Options opts = parser.parse();
-    if (parser.dry_run())
-        return nullptr;
-    else
-        return make_shared<OrderGeneratorDynamicGreedy>(opts);
-}
-
-static Plugin<OrderGenerator> _plugin_greedy(
-    "dynamic_greedy_orders", _parse_greedy);
+static plugins::FeaturePlugin<OrderGeneratorDynamicGreedyFeature> _plugin;
 }

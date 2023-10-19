@@ -2,23 +2,21 @@
 
 #include "utils.h"
 
-#include "../option_parser.h"
-#include "../plugin.h"
-
+#include "../plugins/plugin.h"
 #include "../utils/logging.h"
 #include "../utils/rng.h"
 
 using namespace std;
 
 namespace cost_saturation {
-OrderGeneratorRandom::OrderGeneratorRandom(const Options &opts) :
+OrderGeneratorRandom::OrderGeneratorRandom(const plugins::Options &opts) :
     OrderGenerator(opts) {
 }
 
 void OrderGeneratorRandom::initialize(
     const Abstractions &abstractions,
     const vector<int> &) {
-    utils::Log() << "Initialize random order generator" << endl;
+    utils::g_log << "Initialize random order generator" << endl;
     random_order = get_default_order(abstractions.size());
 }
 
@@ -29,18 +27,16 @@ Order OrderGeneratorRandom::compute_order_for_state(
     return random_order;
 }
 
+class OrderGeneratorRandomFeature
+    : public plugins::TypedFeature<OrderGenerator, OrderGeneratorRandom> {
+public:
+    OrderGeneratorRandomFeature() : TypedFeature("random_orders") {
+        document_subcategory("heuristics_cost_partitioning");
+        document_title("Random orders");
+        document_synopsis("Shuffle abstractions randomly.");
+        add_common_order_generator_options(*this);
+    }
+};
 
-static shared_ptr<OrderGenerator> _parse(OptionParser &parser) {
-    parser.document_synopsis(
-        "Random orders",
-        "Shuffle abstractions randomly.");
-    add_common_order_generator_options(parser);
-    Options opts = parser.parse();
-    if (parser.dry_run())
-        return nullptr;
-    else
-        return make_shared<OrderGeneratorRandom>(opts);
-}
-
-static Plugin<OrderGenerator> _plugin("random_orders", _parse);
+static plugins::FeaturePlugin<OrderGeneratorRandomFeature> _plugin;
 }

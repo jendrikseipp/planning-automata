@@ -5,11 +5,12 @@
 #include "axioms.h"
 #include "state_id.h"
 
-#include "algorithms/int_hash_set.h"
 #include "algorithms/int_packer.h"
 #include "algorithms/segmented_vector.h"
 #include "algorithms/subscriber.h"
 #include "utils/hash.h"
+
+#include <parallel_hashmap/phmap.h>
 
 #include <set>
 
@@ -97,9 +98,9 @@
   Usage example 2
   ---------------
   Problem:
-    In the LMcount heuristic each state should store which landmarks are
+    In the landmark heuristics each state should store which landmarks are
     already reached when this state is reached. This should only require
-    additional memory when the LMcount heuristic is used.
+    additional memory when these heuristics are used.
 
   Solution:
     The heuristic object uses an attribute of type PerStateBitset to store for each
@@ -107,6 +108,10 @@
 */
 namespace int_packer {
 class IntPacker;
+}
+
+namespace utils {
+class LogProxy;
 }
 
 using PackedStateBin = int_packer::IntPacker::Bin;
@@ -123,13 +128,13 @@ class StateRegistry : public subscriber::SubscriberService<StateRegistry> {
               state_size(state_size) {
         }
 
-        int_hash_set::HashType operator()(int id) const {
+        uint64_t operator()(int id) const {
             const PackedStateBin *data = state_data_pool[id];
             utils::HashState hash_state;
             for (int i = 0; i < state_size; ++i) {
                 hash_state.feed(data[i]);
             }
-            return hash_state.get_hash32();
+            return hash_state.get_hash64();
         }
     };
 
@@ -155,7 +160,7 @@ class StateRegistry : public subscriber::SubscriberService<StateRegistry> {
       this registry and find their IDs. States are compared/hashed semantically,
       i.e. the actual state data is compared, not the memory location.
     */
-    using StateIDSet = int_hash_set::IntHashSet<StateIDSemanticHash, StateIDSemanticEqual>;
+    using StateIDSet = phmap::flat_hash_set<int, StateIDSemanticHash, StateIDSemanticEqual>;
 
     TaskProxy task_proxy;
     const int_packer::IntPacker &state_packer;
@@ -212,10 +217,15 @@ public:
 
     int get_state_size_in_bytes() const;
 
-    void print_statistics() const;
+    void print_statistics(utils::LogProxy &log) const;
 
-    class const_iterator : public std::iterator<
-                               std::forward_iterator_tag, StateID> {
+    class const_iterator {
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = StateID;
+        using difference_type = ptrdiff_t;
+        using pointer = StateID *;
+        using reference = StateID &;
+
         /*
           We intentionally omit parts of the forward iterator concept
           (e.g. default construction, copy assignment, post-increment)
@@ -237,12 +247,12 @@ public:
             return *this;
         }
 
-        bool operator==(const const_iterator &rhs) {
+        bool operator==(const const_iterator &rhs) const {
             assert(&registry == &rhs.registry);
             return pos == rhs.pos;
         }
 
-        bool operator!=(const const_iterator &rhs) {
+        bool operator!=(const const_iterator &rhs) const {
             return !(*this == rhs);
         }
 
