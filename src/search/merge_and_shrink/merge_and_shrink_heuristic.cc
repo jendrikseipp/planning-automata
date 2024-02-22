@@ -30,7 +30,10 @@ static void print_vector(const vector<int> &vec, ofstream &out) {
 }
 
 static void write_automata_file(
-    const TaskProxy &task_proxy, const FactoredTransitionSystem &fts, ofstream &out) {
+    const TaskProxy &task_proxy,
+    const FactoredTransitionSystem &fts,
+    LabelGrouping grouping,
+    ofstream &out) {
     int num_labels = fts.get_labels().get_num_total_labels();
     out << "Actions: " << num_labels << endl;
     int num_automata = fts.get_num_active_entries();
@@ -81,22 +84,29 @@ static void write_automata_file(
         }
 
         int label_group_id = 0;
-        int num_global_actions = 0;
+        int num_local_actions = -1;
         vector<int> global_to_local_map(num_labels, -1);
-        for (const LocalLabelInfo &local_label_info : ts) {
-            const LabelGroup &label_group = local_label_info.get_label_group();
-            for (int label : label_group) {
-                global_to_local_map[label] = label_group_id;
-                ++num_global_actions;
+        if (grouping == LabelGrouping::NONE) {
+            // Identity function.
+            iota(global_to_local_map.begin(), global_to_local_map.end(), 0);
+            num_local_actions = num_labels;
+        } else if (grouping == LabelGrouping::LOCALLY_EQUIVALENT) {
+            int num_global_actions = 0;
+            for (const LocalLabelInfo &local_label_info : ts) {
+                const LabelGroup &label_group = local_label_info.get_label_group();
+                for (int label : label_group) {
+                    global_to_local_map[label] = label_group_id;
+                    ++num_global_actions;
+                }
+                ++label_group_id;
             }
-
-            ++label_group_id;
+            if (num_global_actions != num_labels) {
+                ABORT("number of labels differs from number of operators");
+            }
+            num_local_actions = label_group_id;
+        } else {
+            ABORT("Unknown label grouping.");
         }
-        if (num_global_actions != num_labels) {
-            ABORT("number of labels differs from number of operators");
-        }
-
-        int num_local_actions = label_group_id;
 
         // For each local state s (rows) and for each local action o (columns):
         // id of state to which we transition from s on o (-1 indicates no transition).
@@ -105,18 +115,31 @@ static void write_automata_file(
             dest_states.resize(num_local_actions, -1);
         }
 
-        label_group_id = 0;
         vector<int> local_action_costs(num_local_actions, -1);
-        for (const LocalLabelInfo &local_label_info : ts) {
-            const vector<Transition> &transitions = local_label_info.get_transitions();
-
-            local_action_costs[label_group_id] = local_label_info.get_cost();
-
-            for (const Transition &transition : transitions) {
-                transition_function[transition.src][label_group_id] = transition.target;
+        if (grouping == LabelGrouping::NONE) {
+            for (const LocalLabelInfo &local_label_info : ts) {
+                const LabelGroup &label_group = local_label_info.get_label_group();
+                const vector<Transition> &transitions = local_label_info.get_transitions();
+                for (int label : label_group) {
+                    local_action_costs[label] = task_proxy.get_operators()[label].get_cost();
+                    for (const Transition &transition : transitions) {
+                        transition_function[transition.src][label] = transition.target;
+                    }
+                }
             }
+        } else if (grouping == LabelGrouping::LOCALLY_EQUIVALENT) {
+            label_group_id = 0;
+            for (const LocalLabelInfo &local_label_info : ts) {
+                const vector<Transition> &transitions = local_label_info.get_transitions();
 
-            ++label_group_id;
+                local_action_costs[label_group_id] = local_label_info.get_cost();
+
+                for (const Transition &transition : transitions) {
+                    transition_function[transition.src][label_group_id] = transition.target;
+                }
+
+                ++label_group_id;
+            }
         }
 
         out << num_local_actions << endl;
@@ -170,7 +193,7 @@ MergeAndShrinkHeuristic::MergeAndShrinkHeuristic(const plugins::Options &opts)
         cerr << "Failed to open automata file." << endl;
         utils::exit_with(utils::ExitCode::SEARCH_CRITICAL_ERROR);
     }
-    write_automata_file(task_proxy, fts, outfile);
+    write_automata_file(task_proxy, fts, opts.get<LabelGrouping>("label_grouping"), outfile);
     outfile.close();
     exit(0);
 
@@ -322,6 +345,11 @@ public:
 
         Heuristic::add_options_to_feature(*this);
         add_merge_and_shrink_algorithm_options_to_feature(*this);
+
+        add_option<LabelGrouping>(
+            "label_grouping",
+            "how to group labels in automata",
+            "locally_equivalent");
 
         document_note(
             "Note",

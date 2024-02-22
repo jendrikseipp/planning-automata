@@ -527,4 +527,9 @@ void handle_shrink_limit_options_defaults(plugins::Options &opts, const utils::C
     opts.set<int>("max_states_before_merge", max_states_before_merge);
     opts.set<int>("threshold_before_merge", threshold);
 }
+
+static plugins::TypedEnumPlugin<LabelGrouping> _enum_plugin({
+        {"none", "don't group labels"},
+        {"locally_equivalent", "group labels that induce the same local transitions"},
+    });
 }

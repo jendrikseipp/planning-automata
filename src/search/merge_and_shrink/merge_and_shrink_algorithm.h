@@ -23,6 +23,11 @@ class LabelReduction;
 class MergeStrategyFactory;
 class ShrinkStrategy;
 
+enum class LabelGrouping {
+    NONE,
+    LOCALLY_EQUIVALENT,
+};
+
 class MergeAndShrinkAlgorithm {
     // TODO: when the option parser supports it, the following should become
     // unique pointers.
