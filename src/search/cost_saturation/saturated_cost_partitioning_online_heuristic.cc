@@ -9,7 +9,6 @@
 #include "../algorithms/partial_state_tree.h"
 #include "../plugins/plugin.h"
 #include "../task_utils/task_properties.h"
-#include "../utils/countdown_timer.h"
 #include "../utils/logging.h"
 #include "../utils/markup.h"
 #include "../utils/rng_options.h"
@@ -18,45 +17,29 @@
 using namespace std;
 
 namespace cost_saturation {
-// TODO: avoid code duplication
-static void extract_useful_abstraction_functions(
-    const vector<CostPartitioningHeuristic> &cp_heuristics,
-    Abstractions &abstractions,
-    AbstractionFunctions &abstraction_functions) {
-    int num_abstractions = abstractions.size();
-
-    // Collect IDs of useful abstractions.
-    vector<bool> useful_abstractions(num_abstractions, false);
-    for (const auto &cp_heuristic : cp_heuristics) {
-        cp_heuristic.mark_useful_abstractions(useful_abstractions);
-    }
-
-    abstraction_functions.reserve(num_abstractions);
-    for (int i = 0; i < num_abstractions; ++i) {
-        if (useful_abstractions[i]) {
-            abstraction_functions.push_back(abstractions[i]->extract_abstraction_function());
-        } else {
-            abstraction_functions.push_back(nullptr);
-        }
-    }
-    assert(abstraction_functions.size() == abstractions.size());
-}
-
-
 SaturatedCostPartitioningOnlineHeuristic::SaturatedCostPartitioningOnlineHeuristic(
-    const plugins::Options &opts,
+    const shared_ptr<OrderGenerator> &order_generator,
+    Saturator saturator,
+    const CPFunction &cp_function,
     Abstractions &&abstractions_,
-    unique_ptr<DeadEnds> &&dead_ends_)
-    : Heuristic(opts),
-      order_generator(opts.get<shared_ptr<OrderGenerator>>("orders")),
-      saturator(opts.get<Saturator>("saturator")),
-      cp_function(get_cp_function_from_options(opts)),
+    unique_ptr<DeadEnds> &&dead_ends_,
+    const int interval,
+    const double max_time,
+    const int max_size_kb,
+    const bool debug,
+    const shared_ptr<AbstractTask> &transform,
+    bool cache_estimates, const string &description,
+    utils::Verbosity verbosity)
+    : Heuristic(transform, cache_estimates, description, verbosity),
+      order_generator(order_generator),
+      saturator(saturator),
+      cp_function(cp_function),
       abstractions(move(abstractions_)),
       dead_ends(move(dead_ends_)),
-      interval(opts.get<int>("interval")),
-      max_time(opts.get<double>("max_time")),
-      max_size_kb(opts.get<int>("max_size")),
-      debug(opts.get<bool>("debug")),
+      interval(interval),
+      max_time(max_time),
+      max_size_kb(max_size_kb),
+      debug(debug),
       costs(task_properties::get_operator_costs(task_proxy)),
       improve_heuristic(true),
       size_kb(0),
@@ -66,8 +49,8 @@ SaturatedCostPartitioningOnlineHeuristic::SaturatedCostPartitioningOnlineHeurist
     for (const auto &cp : cp_heuristics) {
         size_kb += cp.estimate_size_in_kb();
     }
-    improve_heuristic_timer = utils::make_unique_ptr<utils::Timer>(false);
-    select_state_timer = utils::make_unique_ptr<utils::Timer>(false);
+    improve_heuristic_timer = make_unique<utils::Timer>(false);
+    select_state_timer = make_unique<utils::Timer>(false);
 }
 
 SaturatedCostPartitioningOnlineHeuristic::~SaturatedCostPartitioningOnlineHeuristic() {
@@ -82,6 +65,8 @@ int SaturatedCostPartitioningOnlineHeuristic::compute_heuristic(const State &anc
         improve_heuristic_timer->resume();
     }
 
+    assert(!task_proxy.needs_to_convert_ancestor_state(ancestor_state));
+    // The conversion is unneeded but it results in an unpacked state, which is faster.
     State state = convert_ancestor_state(ancestor_state);
 
     if (dead_ends && dead_ends->subsumes(state)) {
@@ -91,10 +76,10 @@ int SaturatedCostPartitioningOnlineHeuristic::compute_heuristic(const State &anc
 
     vector<int> abstract_state_ids;
     if (improve_heuristic) {
-        assert(!abstractions.empty() && abstraction_functions.empty());
+        assert(abstraction_functions.empty());
         abstract_state_ids = get_abstract_state_ids(abstractions, state);
     } else {
-        assert(abstractions.empty() && !abstraction_functions.empty());
+        assert(abstractions.empty());
         abstract_state_ids = get_abstract_state_ids(abstraction_functions, state);
     }
 
@@ -108,8 +93,8 @@ int SaturatedCostPartitioningOnlineHeuristic::compute_heuristic(const State &anc
         ((*improve_heuristic_timer)() >= max_time || size_kb >= max_size_kb)) {
         utils::g_log << "Stop heuristic improvement phase." << endl;
         improve_heuristic = false;
-        extract_useful_abstraction_functions(
-            cp_heuristics, abstractions, abstraction_functions);
+        abstraction_functions = extract_abstraction_functions_from_useful_abstractions(
+            cp_heuristics, nullptr, abstractions);
         utils::release_vector_memory(abstractions);
         print_intermediate_statistics();
         print_final_statistics();
@@ -211,7 +196,7 @@ public:
                 "2021"));
         // The online version is not consistent.
         bool consistent = false;
-        add_options_for_cost_partitioning_heuristic(*this, consistent);
+        add_options_for_cost_partitioning_heuristic(*this, "scp_online", consistent);
         add_saturator_option(*this);
 
         add_option<shared_ptr<OrderGenerator>>(
@@ -237,20 +222,29 @@ public:
             "debug",
             "print debug output",
             "false");
-        utils::add_rng_options(*this);
+        utils::add_rng_options_to_feature(*this);
     }
 
     virtual shared_ptr<SaturatedCostPartitioningOnlineHeuristic> create_component(
-        const plugins::Options &options, const utils::Context &) const override {
+        const plugins::Options &options) const override {
         shared_ptr<AbstractTask> task = options.get<shared_ptr<AbstractTask>>("transform");
-        unique_ptr<DeadEnds> dead_ends = utils::make_unique_ptr<DeadEnds>();
+        unique_ptr<DeadEnds> dead_ends = make_unique<DeadEnds>();
         Abstractions abstractions = generate_abstractions(
             task,
             options.get_list<shared_ptr<AbstractionGenerator>>("abstractions"),
             dead_ends.get());
 
-        return make_shared<SaturatedCostPartitioningOnlineHeuristic>(
-            options, move(abstractions), move(dead_ends));
+        return plugins::make_shared_from_arg_tuples<SaturatedCostPartitioningOnlineHeuristic>(
+            options.get<shared_ptr<OrderGenerator>>("orders"),
+            options.get<Saturator>("saturator"),
+            get_cp_function_from_options(options),
+            move(abstractions),
+            move(dead_ends),
+            options.get<int>("interval"),
+            options.get<double>("max_time"),
+            options.get<int>("max_size"),
+            options.get<bool>("debug"),
+            get_heuristic_arguments_from_options(options));
     }
 };
 

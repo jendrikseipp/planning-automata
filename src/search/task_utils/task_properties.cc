@@ -1,7 +1,6 @@
 #include "task_properties.h"
 
 #include "../utils/logging.h"
-#include "../utils/memory.h"
 #include "../utils/system.h"
 
 #include <algorithm>
@@ -168,17 +167,14 @@ void dump_task(const TaskProxy &task_proxy) {
 }
 
 PerTaskInformation<int_packer::IntPacker> g_state_packers(
-    [](const TaskProxy &task_proxy)
-    {
+    [](const TaskProxy &task_proxy) {
         VariablesProxy variables = task_proxy.get_variables();
         vector<int> variable_ranges;
         variable_ranges.reserve(variables.size());
         for (VariableProxy var : variables) {
-            /* IntPacker expects all variables to have at least a domain size of
-               two. This is not the case for some domain-abstracted tasks. */
-            int domain_size = max(2, var.get_domain_size());
-            variable_ranges.push_back(domain_size);
+            variable_ranges.push_back(var.get_domain_size());
         }
-        return utils::make_unique_ptr<int_packer::IntPacker>(variable_ranges);
-    });
+        return make_unique<int_packer::IntPacker>(variable_ranges);
+    }
+    );
 }

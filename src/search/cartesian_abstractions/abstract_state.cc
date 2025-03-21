@@ -3,8 +3,6 @@
 #include "refinement_hierarchy.h"
 #include "utils.h"
 
-#include "../utils/memory.h"
-
 #include <algorithm>
 #include <cassert>
 #include <unordered_set>
@@ -12,11 +10,10 @@
 using namespace std;
 
 namespace cartesian_abstractions {
-AbstractState::AbstractState(
-    int state_id, NodeID node_id, CartesianSet &&cartesian_set)
+AbstractState::AbstractState(int state_id, NodeID node_id, const CartesianSet &cartesian_set)
     : state_id(state_id),
       node_id(node_id),
-      cartesian_set(move(cartesian_set)) {
+      cartesian_set(cartesian_set) {
 }
 
 int AbstractState::count(int var) const {
@@ -100,7 +97,7 @@ NodeID AbstractState::get_node_id() const {
 }
 
 unique_ptr<AbstractState> AbstractState::get_trivial_abstract_state(
-    const vector<int> &domain_sizes) {
-    return utils::make_unique_ptr<AbstractState>(0, 0, CartesianSet(domain_sizes));
+    const CartesianSet &trivial_cartesian_set) {
+    return make_unique<AbstractState>(0, 0, trivial_cartesian_set);
 }
 }

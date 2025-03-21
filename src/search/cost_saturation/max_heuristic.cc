@@ -10,8 +10,11 @@
 using namespace std;
 
 namespace cost_saturation {
-MaxHeuristic::MaxHeuristic(const plugins::Options &opts, const Abstractions &abstractions)
-    : Heuristic(opts) {
+MaxHeuristic::MaxHeuristic(
+    Abstractions &&abstractions,
+    const shared_ptr<AbstractTask> &transform, bool cache_estimates,
+    const string &description, utils::Verbosity verbosity)
+    : Heuristic(transform, cache_estimates, description, verbosity) {
     vector<int> costs = task_properties::get_operator_costs(task_proxy);
     for (auto &abstraction : abstractions) {
         h_values_by_abstraction.push_back(abstraction->compute_goal_distances(costs));
@@ -20,6 +23,8 @@ MaxHeuristic::MaxHeuristic(const plugins::Options &opts, const Abstractions &abs
 }
 
 int MaxHeuristic::compute_heuristic(const State &ancestor_state) {
+    assert(!task_proxy.needs_to_convert_ancestor_state(ancestor_state));
+    // The conversion is unneeded but it results in an unpacked state, which is faster.
     State state = convert_ancestor_state(ancestor_state);
     int max_h = 0;
     for (size_t i = 0; i < abstraction_functions.size(); ++i) {
@@ -41,16 +46,17 @@ public:
         document_subcategory("heuristics_cost_partitioning");
         document_title("Maximum over abstractions");
         document_synopsis("Maximize over a set of abstraction heuristics.");
-        add_options_for_cost_partitioning_heuristic(*this);
+        add_options_for_cost_partitioning_heuristic(*this, "maximize");
     }
 
     virtual shared_ptr<MaxHeuristic> create_component(
-        const plugins::Options &options, const utils::Context &) const override {
+        const plugins::Options &options) const override {
         Abstractions abstractions = generate_abstractions(
             options.get<shared_ptr<AbstractTask>>("transform"),
             options.get_list<shared_ptr<AbstractionGenerator>>("abstractions"));
 
-        return make_shared<MaxHeuristic>(options, move(abstractions));
+        return plugins::make_shared_from_arg_tuples<MaxHeuristic>(
+            move(abstractions), get_heuristic_arguments_from_options(options));
     }
 };
 

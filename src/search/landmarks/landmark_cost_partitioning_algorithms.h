@@ -7,6 +7,7 @@
 
 #include "../lp/lp_solver.h"
 
+#include <unordered_set>
 #include <vector>
 
 class ConstBitsetView;
@@ -31,7 +32,7 @@ protected:
     const LandmarkGraph &lm_graph;
     const std::vector<int> operator_costs;
 
-    const Achievers &get_achievers(
+    const std::unordered_set<int> &get_achievers(
         const Landmark &landmark, bool past) const;
 public:
     CostPartitioningAlgorithm(const std::vector<int> &operator_costs,
@@ -88,7 +89,8 @@ public:
 };
 
 class LandmarkPhO : public CostPartitioningAlgorithm {
-    // See comment for LandmarkEfficientOptimalSharedCostAssignment.
+    // See comment for OptimalCostPartitioningAlgorithm.
+    const bool saturate;
     lp::LPSolver lp_solver;
     std::vector<lp::LPConstraint> lp_constraints;
     lp::LinearProgram lp;
@@ -100,6 +102,7 @@ public:
     LandmarkPhO(
         const std::vector<int> &operator_costs,
         const LandmarkGraph &graph,
+        bool saturate,
         lp::LPSolverType solver_type);
 
     virtual double get_cost_partitioned_heuristic_value(
