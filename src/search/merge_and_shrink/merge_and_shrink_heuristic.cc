@@ -148,6 +148,7 @@ MergeAndShrinkHeuristic::MergeAndShrinkHeuristic(
     bool prune_unreachable_states, bool prune_irrelevant_states,
     int max_states, int max_states_before_merge,
     int threshold_before_merge, double main_loop_max_time,
+    LabelGrouping label_grouping,
     const shared_ptr<AbstractTask> &transform, bool cache_estimates,
     const string &description, utils::Verbosity verbosity)
     : Heuristic(transform, cache_estimates, description, verbosity) {
@@ -165,7 +166,7 @@ MergeAndShrinkHeuristic::MergeAndShrinkHeuristic(
         cerr << "Failed to open automata file." << endl;
         utils::exit_with(utils::ExitCode::SEARCH_CRITICAL_ERROR);
     }
-    write_automata_file(task_proxy, fts, opts.get<LabelGrouping>("label_grouping"), outfile);
+    write_automata_file(task_proxy, fts, label_grouping, outfile);
     outfile.close();
     exit(0);
 
@@ -378,6 +379,7 @@ public:
     create_component(const plugins::Options &opts) const override {
         return plugins::make_shared_from_arg_tuples<MergeAndShrinkHeuristic>(
             get_merge_and_shrink_algorithm_arguments_from_options(opts),
+            opts.get<LabelGrouping>("label_grouping"),
             get_heuristic_arguments_from_options(opts)
             );
     }

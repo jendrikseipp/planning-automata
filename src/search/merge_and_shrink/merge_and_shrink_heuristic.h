@@ -11,6 +11,7 @@ class MergeAndShrinkRepresentation;
 
 class MergeStrategyFactory;
 class ShrinkStrategy;
+enum class LabelGrouping;
 class LabelReduction;
 
 class MergeAndShrinkHeuristic : public Heuristic {
@@ -31,6 +32,7 @@ public:
         bool prune_unreachable_states, bool prune_irrelevant_states,
         int max_states, int max_states_before_merge,
         int threshold_before_merge, double main_loop_max_time,
+        LabelGrouping label_grouping,
         const std::shared_ptr<AbstractTask> &transform,
         bool cache_estimates, const std::string &description,
         utils::Verbosity verbosity);
