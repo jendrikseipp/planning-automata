@@ -6,8 +6,6 @@ import sys
 from . import aliases
 from . import returncodes
 from . import util
-from .run_components import PREPROCESSED_OUTPUT
-
 
 DESCRIPTION = """Fast Downward driver script.
 
@@ -104,6 +102,7 @@ Examples:
 
 COMPONENTS_PLUS_OVERALL = ["translate", "preprocess", "search", "validate", "overall"]
 DEFAULT_SAS_FILE = Path("output.sas")
+DEFAULT_PREPROCESSED_SAS_FILE = DEFAULT_SAS_FILE.with_name("preprocessed-" + DEFAULT_SAS_FILE.name)
 
 
 """
@@ -393,8 +392,8 @@ def parse_args():
     components.add_argument(
         "--preprocess",
         "--transform-task",  # For backward compatibility.
-        help="path to or name of external program that transforms output.sas "
-            f"into {PREPROCESSED_OUTPUT} (default: %(const)s)",
+        help="preprocess the translator output. Accepts optional external "
+            "preprocessing program (default: %(const)s)",
         const="preprocess-h2", nargs="?")
     components.add_argument(
         "--search", action="store_true",
@@ -440,6 +439,10 @@ def parse_args():
         help="intermediate file for storing the translator output "
             f"(implies --keep-sas-file, default: {DEFAULT_SAS_FILE})")
     driver_other.add_argument(
+        "--preprocessed-sas-file", metavar="FILE", type=Path,
+        help="intermediate file for storing the preprocessor output "
+            f"(implies --keep-sas-file, default: {DEFAULT_PREPROCESSED_SAS_FILE})")
+    driver_other.add_argument(
         "--keep-sas-file", action="store_true",
         help="keep translator output file (implied by --sas-file, default: "
             "delete file if translator and search component are active)")
@@ -475,6 +478,11 @@ def parse_args():
         args.keep_sas_file = True
     else:
         args.sas_file = DEFAULT_SAS_FILE
+
+    if args.preprocessed_sas_file:
+        args.keep_sas_file = True
+    else:
+        args.preprocessed_sas_file = DEFAULT_PREPROCESSED_SAS_FILE
 
     if args.build and args.debug:
         print_usage_and_exit_with_driver_input_error(
